@@ -1,0 +1,353 @@
+---
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    number_sections: true
+    mathjax: "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"
+    theme: united
+sansfont: LiberationSans
+bibliography: NMIReferences_New.bib
+csl: biomed-central.csl
+csl-entry-spacing: 1em
+nocite: '@*'
+link-citations: true
+---
+<!-- <script> -->
+<!--    $(document).ready(function() { -->
+<!--      $head = $('#header'); -->
+<!--      $head.prepend('<img src=\"CytelLogo.png\" style=\"float: right;width: 150px;\"/>') -->
+<!--    }); -->
+<!-- </script> -->
+<!-- <script> -->
+<!--    $(document).ready(function() { -->
+<!--      $head = $('#header'); -->
+<!--      $head.prepend('<img src=\"CytelLogo.png\" style=\"float: right;width: 125px;\"/>') -->
+<!--    }); -->
+<!-- </script> -->
+
+---
+title:  "Network Meta-Interpolation: Effect modification adjustment in network meta-analysis using subgroup analyses"
+author: "Ofir Harari, Mohsen Soltanifar, Andre Verhoek, Joseph Cappelleri, Mario Ouwens, Caitlin Daly & Bart Heeg"
+date:   "Oct 17, 2022"
+output:
+html_document:
+df_print: paged
+---
+
+<style>
+  p {line-height: 1.75em;}
+</style>    
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+The following tutorial is a step-by-step demo of the methods presented in [our paper](https://onlinelibrary.wiley.com/doi/abs/10.1002/jrsm.1608) @Harari2022. You may download the code and datasets from the [supplementary materials](https://drive.google.com/file/d/1PqoAz-44iaaZTjLL-uma-ZasK1OOfsjK/view?usp=drive_link) to experiment with it by yourselves.  
+
+# Before we start
+Please make sure the following libraries are installed on your computer, as well as OpenBUGS --
+```{r, echo=TRUE, message=FALSE}
+library(R2OpenBUGS)
+library(dplyr)
+library(doParallel)
+library(doSNOW)
+library(tictoc)
+library(tibble)
+library(multinma)
+library(tidyr)
+library(ggplot2)
+library(broom)
+library(broom.mixed)
+library(reshape2)
+library(lemon)
+library(kableExtra)
+library(purrr)
+library(plotly)
+library(shiny)
+```
+
+Setting the working directory and sourcing the custom functions --
+```{r, echo=TRUE}
+#Setting working directory to current one
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+#Sourcing functions
+source('NMI_Functions.R')
+```
+
+# The data
+The following example is one instance of a random dataset -- one of thousands that were used in the simulation study in our paper.
+Here, we consider an evidence network consisting of four treatments, denoted $A$, $B$, $C$ and $D$, across seven studies: six -- three $A$--$B$ and three $A$--$C$ trials -- reported at the aggregate-level, and one $A$--$D$ trial reported at the individual patient-level. The data were generated using the following non-shared effect modification logistic model - 
+$$
+\log\frac{p_i}{1-p_i} = \varepsilon_{i} + 
+\begin{cases}
+\begin{array}{ll}
+-1.39 + 0.69T_i + x_{1i}T_i, &\text{$A$-$B$ trials},\\[.5em]
+-1.39 + T_i + 1.61x_{1i}T_i + x_{2i}T_i,&\text{$A$-$C$ trials},\\[.5em]
+-1.39 + 1.5T_i - 1.2x_{1i}T_i - x_{2i}T_i,&\text{$A$-$D$ trial},
+\end{array}
+\end{cases}
+$$
+where $x_1$ and $x_2$ denote two binary effect modifiers, $\varepsilon_{i}\sim\mathcal{N}\left(0,0.2^2\right)$ and 
+$$T_i = \begin{cases}
+\begin{array}{ll}
+0,& \text{the $i^{\mathrm{th}}$ patient received treatment $A$},\\[1em]
+1,& \text{otherwise}.
+\end{array}
+\end{cases}$$
+
+## Reading the various datasets
+
+The goal of this tutorial is to demonstrate the different data requirements for the various indirect treatment comparison (ITC) methods, fit them and compare the results. In the example that will follow, the different aggregate-level datasets (AgD) were all derived from the same simulated data, and are therefore comparable. Next, we will read and display each dataset.
+
+### Individual patient-level data
+
+Starting with the IPD study --
+```{r, echo=TRUE}
+#reading the data
+IPD = read.csv('Example_IPD.csv') #IPD (for all methods)
+head(IPD, 10)
+```
+The final $\mathtt{TrtClass}$ column, containing the different treatment classes (in this case just $\mathtt{Trt}$ and $\mathtt{Ctrl}$), is essential for the running of ML-NMR later. 
+
+It may also be interesting to estimate the Pearson correlation between the effect modifiers, as it plays an important role in NMI --
+```{r, echo=TRUE}
+#estimating the Pearson correlation between x1 and x2
+(rho_hat = cor(IPD[grep('x', colnames(IPD))]))
+```
+
+### Aggregate-level NMA/NMR data
+This is the typical AgD format for standard network meta-analysis and network meta-regression @Ref3 @Ref5 @Ref4 --
+```{r, echo=TRUE}
+(NMR_AgD = read.csv('Example_AgD_NMR_NMA.csv')) #AgD for NMR/NMA
+```
+The standard NMA will ignore the $\mathtt{x_1}$ and $\mathtt{x_2}$ columns, while NMR will use them as regressors.
+
+### NMI-format aggregate-level data {#data}
+
+Now for the NMI aggregate-level data in its particular format --
+```{r, echo=TRUE, results = FALSE}
+(NMI_AgD = read.csv('Example_AgD_NMI.csv')) #AgD for NMI
+```
+
+```{r, echo=FALSE, results = TRUE}
+(NMI_AgD = read.csv('Example_AgD_NMI.csv')) %>% 
+  mutate(n = ifelse(is.na(n), '', n),
+         x1 = ifelse(is.na(x1), '', x1),
+         x2 = ifelse(is.na(x2), '', x2))
+#AgD for NMI
+```
+Note that every five rows in the above table refer to a single study, with the first row representing the study-level outcomes and the following four ar subgroup analyses. Later on, we will [impute](#imputed) this table.
+
+### Multilevel NMR-format aggregate-level data
+Finally, the multilevel NMR (ML-NMR) @Ref24 aggregate-level data -- 
+```{r, echo=TRUE}
+(ML_NMR_AgD = read.csv('Example_AgD_ML_NMR.csv'))  #AgD for ML-NMR
+```
+Unlike the previous AgDs, this one is required to be provided as raw counts (for a dichotomous outcome) at the arm level, and not as (pre-calculated) relative treatment effects and standard errors. 
+
+### Visualizing the evidence network
+The [multinma](https://dmphillippo.github.io/multinma/) package @Ref21 makes plotting the network very convenient --
+```{r, echo=TRUE, fig.align = 'center', cache = TRUE, fig.width=6, fig.height=6}
+ML_NMR_data = list(IPD = IPD, AgD = ML_NMR_AgD)
+
+net = multinma::combine_network(
+  set_ipd(ML_NMR_data$IPD %>%
+            mutate(TrC = Tr),
+          study = Study,
+          trt = Tr,
+          trt_class = TrtClass,
+          r = Y),
+  set_agd_arm(ML_NMR_data$AgD %>%
+                mutate(TrC = Tr),
+              study = Study,
+              trt = Tr,
+              trt_class = TrtClass,
+              r = r,
+              n = n),
+  trt_ref = "A")
+
+
+par(mar = c(0,0,0,0))
+plot(net, weight_edges = TRUE, weight_nodes = TRUE)
+```
+
+# Fitting the different models
+Now that all datasets have been read and presented, we may proceed to fit the different models. 
+
+## Setting values to all inputs
+First, there is a moderately-long list of inputs that need be supplied by the user for the program to run. 
+
+Starting with MCMC-related inputs -- 
+```{r, echo=TRUE, results='hide'}
+N_chains = 3 #number of MCMC chains
+N_iter = 1500 #number of MCMC iterations (in total)
+burnin = 510 #number of MCMC samples to discard
+n_int = 500 #number of MC integration points for ML-NMR
+```
+
+These are the column names the NMI functions require -- 
+```{r, echo=TRUE, results='hide'}
+#AgD and IPD effect modifier column names
+AgD_EM_cols = IPD_EM_cols = c('x1', 'x2')
+Study_col = 'Study' #study column name
+Trt_cols = c('Trt1', 'Trt2') #AgD treatment column names
+TE_col = 'TE' #AgD treatment effect estimate column name
+SE_col = 'se' #AgD standard error column name
+IPD_Trt_col = 'Tr' #IPD treatment column name
+outcome_col = 'Y' #IPD outcome column name
+```
+
+A vector of sample sizes for the AgD studies (by order of appearance) --
+```{r, echo=TRUE, results='hide'}
+samp_sizes = rep(600, 6) #sample sizes for AgD studies
+```
+These are used in the calculation of the Best Linear Unbiased Predictor (BLUP) imputation, in the first step of NMI.
+
+And, finally, the effect modifier levels at which we wish to perform ITC --
+```{r, echo=TRUE, results='hide'}
+#value of effect modifier x1 to be used in ITC
+x1 = .675
+#value of effect modifier x2 to be used in ITC
+x2 = .475
+
+x_vect = c(x1, x2)
+```
+NMI uses the imputed AgD to solve two linear systems, in order to interpolate the treatment effect estimates and standard errors at $\mathtt{\text{x_vect}}$ for all studies.
+
+## Running NMI
+
+This single command performs the first two NMI steps (imputation and interpolation) --
+```{r, echo=TRUE, cache = TRUE}
+#Imputing the AgD
+NMI_object = NMI_interpolation(IPD, NMI_AgD, x_vect, AgD_EM_cols, IPD_EM_cols, 
+                               Study_col, samp_sizes, Trt_cols, TE_col, SE_col, 
+                               IPD_Trt_col) 
+```
+
+### The imputed aggregate-level data {#imputed}
+This is the result of the first NMI step. Here, the last five rows comprise the IPD analyses.
+```{r, echo=TRUE, cache = TRUE, results = FALSE}
+#Have a look at the imputed dataset
+NMI_object$Imputed
+```
+
+```{r, echo=FALSE, cache = TRUE, results = TRUE}
+#Have a look at the imputed dataset
+NMI_object$Imputed %>%
+  mutate(x1 = as.numeric(x1), x2 = as.numeric(x2)) %>% 
+  mutate_at(vars(c(x1, x2, TE, se)), round, 3)
+```
+Compare the imputed NMI AgD with the original table in the [data](#data) section.
+
+### The interpolated treatment effect estimates and standard errors 
+Here are the interpolated TEs and SEs, all at $x_1 = 0.675$ and $x_2 = 0.475$ --
+```{r, echo=TRUE, cache = TRUE, results = FALSE}  
+#The data submitted to NMA for ITC
+NMI_object$Final
+```
+
+```{r, echo=FALSE, cache = TRUE, results = TRUE}  
+#The data submitted to NMA for ITC
+NMI_object$Final %>% 
+  mutate_at(vars(c(TE, se)), round, 3)
+```
+
+### Assessing goodness of (in sample) interpolation
+We can visually inspect the goodness of the interpolation by plotting the originally observed treatment effect estimates against their interpolated counterparts (at the same $x_1$ and $x_2$ values) --
+```{r, cache = TRUE, results = FALSE}
+NMI_diagnostic_plotly(NMI_object)
+```
+<center>
+```{r, echo=FALSE, cache = TRUE, fig.align = 'center', fig.width=5, fig.height=5}
+#NMI interpolation goodness of fit
+NMI_diagnostic_plotly(NMI_object)
+```
+</center>
+In case one wonders about the goodness of the standard error interpolation: that system is an underdetermined one, and as such, interpolates the original "in-sample" observations without any error (meaning all point in an equivalent plot will align perfectly along the $y=x$ line).
+
+### Fitting standard aggregate-level NMA to the adjusted outcomes
+To conclude NMI, the final table of the previous section is submitted to standard.
+```{r, echo=TRUE, cache = TRUE, results = TRUE}  
+#Model fitting
+NMI_sim = NMA_run(NMI_object$Final, N_chains, N_iter, burnin) 
+#Summarising results
+NMI_summary = NMA_NMI_summary(NMI_sim) 
+#TEs and CrIs
+NMI_results = result_table(NMI_summary) 
+```
+The results are stored and will eventually be displayed alongside those of the remaining methods.
+
+## Fitting standard aggregate-level NMA
+```{r, echo=TRUE, cache = TRUE}
+#*#Model fitting
+NMA_sim = NMA_run(NMR_AgD, N_chains, N_iter, burnin) 
+#Summarising results
+NMA_summary = NMA_NMI_summary(NMA_sim) 
+#TEs and CrIs
+NMA_results = result_table(NMA_summary) 
+```
+
+
+## Fitting network meta-regression (NMR)
+```{r, echo=TRUE, cache = TRUE}
+#*#Model fitting
+NMR_sim = NMA_Meta_Reg_run_2D(NMR_AgD, N_chains, N_iter, burnin) 
+#Summarising results
+NMR_summary = NMA_Metareg_summary_2D(NMR_sim, x_vect)
+#TEs and CrIs
+NMR_results = result_table(NMR_summary) 
+```
+
+## Fitting multi-level network meta-regression (ML-NMR)
+```{r, echo=TRUE, cache = TRUE, message=FALSE, results="hide"}
+#Model fitting
+ML_NMR_sim = ML_NMR_Run_2D(ML_NMR_data, N_iter, N_chains, burnin, n_int) 
+#summarising results
+ML_NMR_summ = ML_NMR_summary_2D(n_trts = 4, ML_NMR_sim, x_vect) 
+#TEs and CrIs
+ML_NMR_results = result_table(ML_NMR_summ) 
+```
+
+# Comparing performance
+Let us now compare the results of the various methods, relative to true parameters used in the data generation.
+
+## Calculating the true treatment effects for reference
+We start by calculating the true (relative) treatment effects from the logistic model parameters - 
+```{r, echo=TRUE, cache = TRUE, message=FALSE}
+#These are the logistic regression coefficients that were used to generate the 
+#data used in this demonstration 
+beta_AB = c(-1.39, 0, 0, 0.69, 1.00, 0.00)
+beta_AC = c(-1.39, 0, 0, 1.00, 1.61, 1.00)
+beta_AD = c(-1.39, 0, 0, 1.50, -1.20, -1.00)
+
+#converting the logistic regression coefficients into treatment effects
+d = rbind(beta_AB, beta_AC, beta_AD)[,4:6]
+trt_effs = d%*%c(1, x1, x2)
+(trt_effs = c(trt_effs, trt_effs[c(2,3,3)] - trt_effs[c(1,1,2)]))
+```
+
+## Comparing the different methods
+We can now put together everything we have done.
+
+### Comparison table
+```{r, echo=TRUE, cache = TRUE, message=FALSE}
+display_result_table(NMA_results, NMR_results, ML_NMR_results, NMI_results, trt_effs)
+```
+
+### Graphical comparison
+```{r, echo=TRUE, cache = TRUE, message=FALSE, fig.align = 'center', fig.width=7, fig.height=6}
+result_forest_plot(NMA_summary, NMR_summary, ML_NMR_summ, NMI_summary, trt_effs)
+```
+
+In this example, NMI did extremely well in terms of estimation accuracy (especially in the case of the indirect comparisons, namely: $d_{\mathrm{BC}}$, $d_{\mathrm{BD}}$ and $d_{\mathrm{CD}}$). Note that while this tutorial compares various ITC methods on a single random dataset, [the paper](https://onlinelibrary.wiley.com/doi/abs/10.1002/jrsm.1608) itself contains results from many thousands of simulated datasets. We strongly encourage you to give it a read before drawing any conclusions.
+
+# Conclusion
+NMI is an attractive option when subgroup analyses for all effect modifiers are available. The extra work put toward data extraction, more than pays itself off when the data is driven by a non-shared effect modification data generating mechanism. 
+
+# References
+<bibliography entry-spacing = "2" >
+<div id="refs"></div>
