@@ -131,6 +131,36 @@ BLUP_impute = function(IPD, AgD, AgD_EM_cols, IPD_EM_cols, Study_col,
 
 
 
+
+#' Converting the sigma_hat vector to a Variance-Covariance matrix 
+#'
+#' @param sigma_hat The estimated variance-covariance vector.
+#' 
+#' @return A symmetric variance-covariance matrix.
+#'
+#' @export
+sigma_hat_vec_to_mat = function(sigma_hat){
+  M = length(sigma_hat)
+  K = (sqrt(1 + 8*M) - 1)/2
+  
+  C = matrix(0, nrow = K, ncol = K)
+  t = K + 1
+  for(i in 1:(K-1)){
+    C[i,(i+1):K] = sigma_hat[t:(t + K - i - 1)]
+    t = t + K - i
+  }
+  
+  C = C + t(C)
+  diag(C) = sigma_hat[1:K]
+  
+  return(C)
+}
+
+
+
+
+
+
 #' NMI interpolation pre-NMA
 #'
 #' Interpolating treatment effect estimates and standard errors at new 
@@ -176,16 +206,18 @@ NMI_interpolation = function(IPD, AgD, x_vect, AgD_EM_cols, IPD_EM_cols,
     beta_hat = lm(as.numeric(dat$TE) ~ X)$coef
     sigma_hat = c(t(M2)%*%solve(M2%*%t(M2), (dat[,SE_col])^2))
     
-    u = c(1, x_vect^2, 2*x_vect, 
-          apply(combn(1:m, 2), 2, 
-                function(u){
-                  2*x_vect[u[1]]*x_vect[u[2]]
-                }
-          )
-    )
+    C = sigma_hat_vec_to_mat(sigma_hat)
+    eigen_vals = eigen(C)$values
+    lambda_min = min(eigen_vals)
     
-    TE = beta_hat%*%c(1, x_vect)
-    se = sqrt(t(sigma_hat)%*%u)
+    if(lambda_min <= 0){
+      diag(C) = diag(C) - lambda_min + 1e-6
+    }
+    
+    x_vect_star = c(1, x_vect)
+    
+    TE = beta_hat%*%x_vect_star
+    se = sqrt(t(x_vect_star) %*% C %*% x_vect_star)
     
     TE_orig = dat[, TE_col]
     TE_pred = cbind(1, X)%*%beta_hat
@@ -209,10 +241,7 @@ NMI_interpolation = function(IPD, AgD, x_vect, AgD_EM_cols, IPD_EM_cols,
   out = lapply(studies, single_study_interpolation)
   
   Final = do.call(rbind, lapply(out, `[[`, 1))
-  row.names(Final) = c()
-  
-  Diagnostics = do.call(rbind, lapply(out, `[[`, 2)) %>% 
-    filter(Study != length(unique(Study)))
+  Diagnostics = do.call(rbind, lapply(out, `[[`, 2))
   
   return(list(Imputed = imputed, Final = Final, Diagnostics = Diagnostics))
 }
@@ -1035,7 +1064,6 @@ NMI_diagnostic_plot = function(NMI_object){
 }
 
 
-
 #' Graphical display or results
 #'
 #' @param NMA_results The output of \code{\link{result_table}} for an NMA run.
@@ -1043,47 +1071,17 @@ NMI_diagnostic_plot = function(NMI_object){
 #' @param ML_NMR_results The output of \code{\link{result_table}} for an ML-NMR 
 #' run.
 #' @param NMI_results The output of \code{\link{result_table}} for an NMI run.
-#' @param trt_effs The true treatment effects.
 #' 
 #' @return A kableExtra table.
 #'
 #' @export
 display_result_table = function(NMA_results, NMR_results, 
-                                ML_NMR_results, NMI_results,
-                                trt_effs){
-  trt_effs = format(round(trt_effs, 2), nsmall = 2)
-  as.data.frame(t(rbind(NMA_results, NMR_results, 
-                        ML_NMR_results, NMI_results, trt_effs))) %>% 
-    set_names(., nm = c('NMA', 'NMR', 'ML-NMR', 'NMI', 'True Trt. Eff.')) %>% 
+                                ML_NMR_results, NMI_results){
+  rbind(NMA_results, NMR_results, ML_NMR_results, NMI_results) %>%
+    add_column(Method = c('NMA', 'NMR', 'ML-NMR', 'NMI'),
+               .before = '$d_{\\mathrm{AB}}$') %>% 
     kableExtra::kable(align = 'c') %>%
-    kableExtra::kable_styling(full_width = F, font_size = 12,
+    kableExtra::kable_styling(full_width = F, font_size = 14,
                               bootstrap_options = c("striped")) %>%
-    kableExtra::row_spec(0, font_size = 12)
-}
-
-
-
-
-#' Converting the sigma_hat vector to a Variance-Covariance matrix 
-#'
-#' @param sigma_hat The estimated variance-covariance vector.
-#' 
-#' @return A symmetric variance-covariance matrix.
-#'
-#' @export
-sigma_hat_vec_to_mat = function(sigma_hat){
-  M = length(sigma_hat)
-  K = (sqrt(1 + 8*M) - 1)/2
-  
-  C = matrix(0, nrow = K, ncol = K)
-  t = K + 1
-  for(i in 1:(K-1)){
-    C[i,(i+1):K] = sigma_hat[t:(t + K - i - 1)]
-    t = t + K - i
-  }
-  
-  C = C + t(C)
-  diag(C) = sigma_hat[1:K]
-  
-  return(C)
+    kableExtra::row_spec(0, font_size = 14)
 }
