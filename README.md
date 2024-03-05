@@ -2,8 +2,8 @@
 Code and data for our 2022 Research Synthesis Methods [paper](https://onlinelibrary.wiley.com/doi/full/10.1002/jrsm.1608) "Network meta-interpolation: Effect modification adjustment in network meta-analysis using subgroup analyses". Go to [the tutorial](https://oharari.github.io/Network-Meta-Interpolation/) to learn about the method and how to run our code.
 
 The *Code and Data* folder contains the following files:
-1. Example_AgD_ML_NMR.csv – aggregate-level data at the arm level for running ML-NMR with dichotomous outcome and two effect modifiers (x1 and x2).
-2. Example_AgD_ML_NMR_3D.csv – aggregate-level data at the arm level for running ML-NMR with dichotomous outcome and three effect modifiers (x1, x2 and x3).
+1. **Example_AgD_ML_NMR.csv** – aggregate-level data at the arm level for running ML-NMR with dichotomous outcome and two effect modifiers (x1 and x2).
+2. **Example_AgD_ML_NMR_3D.csv** – aggregate-level data at the arm level for running ML-NMR with dichotomous outcome and three effect modifiers (x1, x2 and x3).
 3. Example_AgD_NMI.csv – aggregate-level data at the study level for running NMI with dichotomous outcome and two effect modifiers (x1 and x2).
 4. Example_AgD_NMI_3D.csv – aggregate-level data at the study level for running NMI with dichotomous outcome and three effect modifiers (x1, x2 and x3).
 5. Example_AgD_NMR_NMA.csv – aggregate-level data at the study level for running NMA/NMR with dichotomous outcome and two effect modifiers (x1 and x2).
