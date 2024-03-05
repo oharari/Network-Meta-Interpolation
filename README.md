@@ -1,4 +1,4 @@
-# Network-Meta-Interpolation
+line# Network-Meta-Interpolation
 Code and data for our 2022 Research Synthesis Methods [paper](https://onlinelibrary.wiley.com/doi/full/10.1002/jrsm.1608) "Network meta-interpolation: Effect modification adjustment in network meta-analysis using subgroup analyses". Go to [the tutorial](https://oharari.github.io/Network-Meta-Interpolation/) to learn about the method and how to run our code.
 
 The *Code and Data* folder contains the following files:
@@ -16,4 +16,4 @@ In addition, included are the following R files –
 2. **NMI_Functions.R** – the functions used in the abovementioned analysis. Sourced by NMI_Script.R.
 
 
-$\text{\bf \textunderscore{Instructions}:}$ keep the above files stored in the same directory, and run NMI_Script.R line-by-line for a full demo. 
+$\underline{\text{\bf Instructions}}$ keep the above files stored in the same directory, and run NMI_Script.R line-by-line for a full demo. 
