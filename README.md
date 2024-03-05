@@ -16,4 +16,4 @@ In addition, included are the following R files –
 2. **NMI_Functions.R** – the functions used in the abovementioned analysis. Sourced by NMI_Script.R.
 
 
-**<u>Instructions</u>:** keep the above files stored in the same directory, and run NMI_Script.R line-by-line for a full demo. 
+**$\underline{text{Instructions}}$:** keep the above files stored in the same directory, and run NMI_Script.R line-by-line for a full demo. 
