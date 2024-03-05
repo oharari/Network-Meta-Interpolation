@@ -15,4 +15,5 @@ In addition, included are the following R files –
 1. **NMI_Script.R** – an R script, to be run line-by-line, fitting NMA, NMR, ML-NMR and NMI to the simulated datasets included and comparing them to the ground-truth treatment effects that were used in their creation.  
 2. **NMI_Functions.R** – the functions used in the abovementioned analysis. Sourced by NMI_Script.R.
 
-- **<u>Instructions</u>:** keep the above files stored in the same directory, and run NMI_Script.R line-by-line for a full demo. 
+
+**++Instructions++:** keep the above files stored in the same directory, and run NMI_Script.R line-by-line for a full demo. 
