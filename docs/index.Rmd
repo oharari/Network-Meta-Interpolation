@@ -45,7 +45,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-The following tutorial is a step-by-step demo of the methods presented in [our paper](https://onlinelibrary.wiley.com/doi/abs/10.1002/jrsm.1608) @Harari2022. You may download the code and datasets from the [supplementary materials](https://drive.google.com/file/d/1PqoAz-44iaaZTjLL-uma-ZasK1OOfsjK/view?usp=drive_link) to experiment with it by yourselves.  
+The following tutorial is a step-by-step demo of the methods presented in [our paper](https://onlinelibrary.wiley.com/doi/abs/10.1002/jrsm.1608) @Harari2022. You may access the code and datasets [here](https://github.com/oharari/Network-Meta-Interpolation/tree/main/Code%20and%20Data) to experiment with it by yourselves.  
 
 # Before we start
 Please make sure the following libraries are installed on your computer, as well as OpenBUGS --
